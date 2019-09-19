@@ -1,0 +1,84 @@
+version: 2.1
+
+orbs:
+  aws-ecr: circleci/aws-ecr@4.0.1
+  aws-ecs: circleci/aws-ecs@0.0.7
+
+workflows:
+  build_test_deploy:
+    jobs:
+      - build_and_test:
+          filters:
+            branches:
+              ignore:
+                - prod
+      - aws-ecr/build_and_push_image:
+          region: AWS_REGION
+          account-url: AWS_ECR_ACCOUNT_URL
+          repo: ${AWS_RESOURCE_NAME_PREFIX}
+          tag: ${CIRCLE_SHA1}
+          extra-build-args: --build-arg dbuser=${DBUSER} --build-arg dbpass=${DBPASS} --build-arg dbhost=${DBHOST} --build-arg dbname=${DBNAME} --build-arg auth0domain=${Auth0Domain} --build-arg auth0clientid=${Auth0ClientId} --build-arg auth0clientsecret=${Auth0ClientSecret} --build-arg flowAuthDomain=${flowAuthDomain} --build-arg flowClientId=${flowClientId} --build-arg flowClientSecret=${flowClientSecret} --build-arg SES_ACCESS_KEY=${SES_ACCESS_KEY} --build-arg SES_SECRET_KEY=${SES_SECRET_KEY} --build-arg SES_REGION=${SES_REGION} --build-arg SES_EMAIL_TO=${SES_EMAIL_TO} --build-arg NODE_ENV=development
+          requires:
+            - build_and_test
+          filters:
+            branches:
+              only:
+                - dev
+                - stage
+      - aws-ecs/deploy-service-update:
+          requires:
+            - aws-ecr/build_and_push_image
+          aws-region: ${AWS_REGION}
+          family: "${AWS_RESOURCE_NAME_PREFIX}-task"
+          service-name: "${AWS_RESOURCE_NAME_PREFIX}-service"
+          cluster-name: "${AWS_RESOURCE_NAME_PREFIX}-cluster"
+          container-image-name-updates: "container=${AWS_RESOURCE_NAME_PREFIX},tag=${CIRCLE_SHA1}"
+          filters:
+            branches:
+              only:
+                - dev
+                - stage
+  production_deploy:
+    jobs:
+      - build_and_test:
+          filters:
+            branches:
+              only:
+                - prod
+      - aws-ecr/build_and_push_image:
+          region: PROD_AWS_REGION
+          account-url: PROD_AWS_ECR_ACCOUNT
+          repo: ${PROD_AWS_RESOURCE_PREFIX}
+          tag: ${CIRCLE_SHA1}
+          extra-build-args: --build-arg dbuser=${PROD_DBUSER} --build-arg dbpass=${PROD_DBPASS} --build-arg dbhost=${PROD_DBHOST} --build-arg dbname=${PROD_DBNAME} --build-arg auth0domain=${PROD_Auth0Domain} --build-arg auth0clientid=${PROD_Auth0ClientId} --build-arg auth0clientsecret=${PROD_Auth0ClientSecret} --build-arg flowAuthDomain=${PROD_flowAuthDomain} --build-arg flowClientId=${PROD_flowClientId} --build-arg flowClientSecret=${PROD_flowClientSecret}  --build-arg SES_ACCESS_KEY=${PROD_SES_ACCESS_KEY} --build-arg SES_SECRET_KEY=${PROD_SES_SECRET_KEY} --build-arg SES_REGION={PROD_SES_REGION} --build-arg SES_EMAIL_TO={PROD_SES_EMAIL_TO}  --build-arg NODE_ENV=production
+          requires:
+            - build_and_test
+          filters:
+            branches:
+              only:
+                - prod
+      - aws-ecs/deploy-service-update:
+          requires:
+            - aws-ecr/build_and_push_image
+          aws-region: ${PROD_AWS_REGION}
+          family: "${PROD_AWS_RESOURCE_PREFIX}-task"
+          service-name: "${PROD_AWS_RESOURCE_PREFIX}-service"
+          cluster-name: "${PROD_AWS_RESOURCE_PREFIX}-cluster"
+          container-image-name-updates: "container=${PROD_AWS_RESOURCE_PREFIX},tag=${CIRCLE_SHA1}"
+          filters:
+            branches:
+              only:
+                - prod
+
+jobs:
+  build_and_test:
+    docker:
+      - image: circleci/node:latest
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: npm install
+      - run:
+          name: Test
+          command: npm test

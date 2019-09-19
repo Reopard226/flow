@@ -1,0 +1,11 @@
+node_modules
+*.log
+yarn.lock
+build
+
+# Compiled files
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+# Module directory
+.terraform/
